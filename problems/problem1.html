@@ -21,18 +21,11 @@
 <body>
 <script type="module">
     import {get_default_lil_gui, ThreeEngine, refresh_displays} from "../js/utils/utils_three.js";
-    import {B1Z1Robot, XArm7Robot} from "../js/utils/utils_robot.js";
-    import {mul_matrix_matrix, mul_matrix_scalar, add_matrix_matrix, identity_matrix, transpose} from "../js/utils/utils_math.js";
-    import {optimization_solve} from "../js/utils/utils_optimization.js";
-
-    // todo: create a visualization that demonstrates your knowledge of forward kinematics on a robot model.
-    // todo: The "default" assignment is to recreate this visualization:
-    // todo: https://yale-cpsc-487-587-internal-djrakita-c95fa6c3239a481a48d29a6b0fd.gitlab.io/html/unit4_visualizations/fk.html
-    // todo: or this visualization:
-    // todo: https://yale-cpsc-487-587-internal-djrakita-c95fa6c3239a481a48d29a6b0fd.gitlab.io/html/unit4_visualizations/fk2.html
-    // todo: however, feel free to deviate from this if you want to.
-    // todo: I will be adding information to the class wiki on important properties and subroutines regarding the robot
-    // todo: object created for this class.  If you have questions, refer to that wiki or ask me over slack.
+    import {XArm7Robot} from "../js/utils/utils_robot.js";
+    import {mul_matrix_matrix, mul_matrix_scalar, add_matrix_matrix, identity_matrix, transpose, frobenius_norm_matrix} from "../js/utils/utils_math.js";
+    import { TransformGizmoEngine } from "../js/utils/utils_transform_gizmo.js";
+    import { forward_kinematics, inverse_kinematics } from "./kinematics.js";
+    import { interpolate_between_states } from "./interpolation.js";
 
     let engine = ThreeEngine.new_default_3d();
     let robot = new XArm7Robot();
@@ -46,18 +39,14 @@
         display_mesh: true,
         display_wireframe: false,
         display_mesh_only_with_frame: false,
-        // dof0: 0,
-        // dof1: 0,
-        // dof2: 0,
-        // dof3: 0,
-        // dof4: 0,
-        // dof5: 0,
-        // dof6: 0,
-        // dof7: 0,
-        // dof8: 0,
+        distance_x: 0.0,
+        distance_y: 0.0,
+        distance_z: 0.0,
+        distance_norm: 0.0,
         x_target: 0.5,
         y_target: 0.5,
         z_target: 0.5,
+        t: 0.00,
 
     };
 
@@ -75,6 +64,7 @@
             settings.x_target = 0.5;
             settings.y_target = 0.5;
             settings.z_target = 0.5;
+            settings.t = 0.00;
             refresh_displays(gui);
         },
         select_all: function() {
@@ -98,6 +88,11 @@
     gui.add(settings, 'display_mesh').name("Display Mesh");
     gui.add(settings, 'display_wireframe').name("Display Wireframe");
     gui.add(settings, 'display_mesh_only_with_frame').name("Display Mesh Only With Frame");
+    gui.add(settings, 'distance_x').name("DistanceX");
+    gui.add(settings, 'distance_y').name("DistanceY");
+    gui.add(settings, 'distance_z').name("DistanceZ");
+    gui.add(settings, 'distance_norm').name("Distance Norm");
+    gui.add(settings, 't', 0.00, 1.00).name('t');
 
     let processed_degrees = [];
     for (let i = 0; i < 9; i++){
@@ -123,144 +118,9 @@
 
     links.forEach(link => {
         let link_name = link.link_name;
-        console.log(link_name);
         settings[link_name] = false;
         gui.add(settings, link_name).name(link_name);
     });
-
-
-    function identity_element() {
-        return identity_matrix(4);
-    }
-    function group_operator(SE3_1, SE3_2) {
-        return mul_matrix_matrix(SE3_1, SE3_2);
-    }
-    
-    function get_SO3_and_t_from_SE3(SE3) {
-        let SO3 = [[SE3[0].slice(0, 3)],
-                   [SE3[1].slice(0, 3)],
-                   [SE3[2].slice(0, 3)]];
-        let t = [[SE3[0][3]], [SE3[1][3]], [SE3[2][3]]];
-        return (SO3, t);
-    }
-    function get_so3_from_u(u){
-        let so3 = [[0, -u[2][0], u[1][0]],
-                   [u[2][0], 0, -u[0][0]],
-                   [-u[1][0], u[0][0], 0]];
-        return so3;
-    }
-    function get_SE3_from_SO3_and_t(SO3, t){
-        let SE3 = SO3;
-        SE3[0].push(t[0][0]);
-        SE3[1].push(t[1][0]);
-        SE3[2].push(t[2][0]);
-        SE3.push([0, 0, 0, 1]);
-        return SE3;
-    }
-    function get_se3_form_so3_and_t(so3, t){
-        get_SE3_from_SO3_and_t(so3, t);
-    }
-    function so3_exponential_map(so3, beta){
-        let p = 0.0;
-        let q = 0.0;
-        if (Math.abs(beta) < 0.0001) {
-            p = 1 - (Math.pow(beta, 2)/6.0) + (Math.pow(beta, 4)/120.0);
-            q = 0.5 - (Math.pow(beta, 2)/24.0) + (Math.pow(beta, 4)/ 720.0);
-        } else {
-            p = (Math.sin(beta)) / beta;
-            q = (1 - Math.cos(beta)) / Math.pow(beta, 2);
-        }
-
-        let term_1 = mul_matrix_scalar(so3, p);
-        let term_2 = mul_matrix_scalar(mul_matrix_matrix(so3, so3), q);      
-        let SO3 = add_matrix_matrix(add_matrix_matrix(identity_matrix(3), term_1), term_2);
-
-        return SO3;
-    }
-    function se3_exponential_map(u, t_alphas){
-        let beta = Math.sqrt(Math.pow(u[0][0], 2) + Math.pow(u[1][0], 2) + Math.pow(u[2][0], 2));
-
-        let so3 = get_so3_from_u(u);
-        let SO3 = so3_exponential_map(so3, beta);
-
-        let p = 0.0;
-        let q = 0.0;
-        if (Math.abs(beta) < 0.0001) {
-            p = 0.5 - (Math.pow(beta, 2)/24.0) + (Math.pow(beta, 4)/720.0);
-            q = (1/6.0) - (Math.pow(beta, 2)/120.0) + (Math.pow(beta, 4)/ 5040.0);
-        } else {
-            p = (1 - Math.cos(beta)) / Math.pow(beta, 2);
-            q = (beta - Math.sin(beta)) / Math.pow(beta, 3);
-        }
-
-        let term_1 = mul_matrix_scalar(so3, p);
-        let term_2 = mul_matrix_scalar(mul_matrix_matrix(so3, so3), q);
-        let C = add_matrix_matrix(add_matrix_matrix(identity_matrix(3), term_1), term_2);
-
-        //console.log(t);
-        let t = mul_matrix_matrix(C, t_alphas);
-
-        let SE3 = get_SE3_from_SO3_and_t(SO3, t);
-        
-        return SE3;
-    }
-
-    function forward_kinematics(state) {
-        let output_poses = [];
-
-
-        let joints = robot.joints;
-        let links = robot.links;
-        let kh = robot.kinematic_hierarchy;
-
-        for(let i = 0; i < links.length; i++) {
-            output_poses.push(identity_element());
-        }
-
-        kh.forEach(layer => {
-            layer.forEach(link_idx => {
-                let curr_link = links[link_idx];
-                let parent_link_idx = curr_link.parent_link_idx;
-                let parent_joint_idx = curr_link.parent_joint_idx;
-                let curr_joint = joints[parent_joint_idx];
-
-                if (parent_joint_idx === null) {
-                    return;
-                }
-                
-                let joint_type = curr_joint.joint_type_string;
-                let curr_pose = output_poses[parent_link_idx];
-                let T_c = curr_joint.xyz_rpy_SE3_matrix;
-                curr_pose = group_operator(curr_pose, T_c);
-                
-                // T_v will depend on some values in the state
-                let T_v = identity_element();
-                if (joint_type === 'revolute') {
-                    let joint_value = state[curr_joint.dof_idx];
-                    let axis = curr_joint.axis;
-                    let u = mul_matrix_scalar(axis, joint_value);
-                    T_v = se3_exponential_map(u, [[0], [0], [0]]);
-
-                } else if (joint_type === 'prismatic') {
-                    let joint_value = state[curr_joint.dof_idx];
-                    let axis = curr_joint.axis;
-                    let u = mul_matrix_scalar(axis, joint_value);
-                    T_v = se3_exponential_map([[0], [0], [0]], u);
-
-                }
-            
-                curr_pose = group_operator(curr_pose, T_v);
-                
-                output_poses[link_idx] = curr_pose;
-
-            });
-
-
-
-        });
-
-        return output_poses;
-    }
 
     function display_link_frame(link_pose){
         let center = [link_pose[0][3], link_pose[1][3], link_pose[2][3]];
@@ -276,44 +136,48 @@
         engine.draw_debug_line(center, local_z, true, 0.005, 0x0000ff, 1.0);
     }
 
-    function inverse_kinematics(state, target){
-        let out_poses = forward_kinematics(state);
-        let grab_rotation, grab_position = get_SO3_and_t_from_SE3(out_poses[19]);
-        let distance = add_matrix_matrix(grab_position, mul_matrix_matrix(-1, target));
-        let square_norm = Math.pow(distance[0][0], 2) + Math.pow(distance[1][0], 2) + Math.pow(distance[2][0], 2);
-        return square_norm;
-    }
-
-
+    let gizmo_engine = new TransformGizmoEngine(engine, 0.034);
+    gizmo_engine.add_gizmo_SO3_matrix_and_position(engine, [[1,0,0],[0,1,0],[0,0,1]], [[0.5], [0.5], [0.5]], 1);
 
     engine.animation_loop( ()  => {
 
         let links = robot.links;
-        let state = [settings.dof0, settings.dof1, settings.dof2, settings.dof3, settings.dof4, settings.dof5, settings.dof6, settings.dof7, settings.dof8];
+        let curr_state = [settings.dof0, settings.dof1, settings.dof2, settings.dof3, settings.dof4, settings.dof5, settings.dof6, settings.dof7, settings.dof8];
 
-        let out_poses = forward_kinematics(state);
+        // let out_poses = forward_kinematics(state);
 
-        // let target = [[settings.x_target], [settings.y_target], [settings.z_target]];
+        let gizmo_target = gizmo_engine.get_gizmo_pose_as_SO3_matrix_and_position(0);
+        let target_position = gizmo_target[1];
+        console.log(target_position);
+        //let target = [[settings.x_target], [settings.y_target], [settings.z_target]];
 
-        // engine.draw_debug_sphere([settings.x_target, settings.y_target, settings.z_target], 0.1, 0x00ff00, 1.0, 10);
+        //engine.draw_debug_sphere([settings.x_target, settings.y_target, settings.z_target], 0.1, 0x00ff00, 1.0, 10);
+        //engine.draw_debug_sphere(target_position, 0.1, 0x00ff00, 1.0, 10);
 
-        // let f = state => {
-        //     let out_poses = forward_kinematics(state);
-        //     let grab_rotation, grab_position = get_SO3_and_t_from_SE3(out_poses[19]);
-        //     let distance = add_matrix_matrix(grab_position, mul_matrix_scalar(target, -1));
-        //     let square_norm = Math.pow(distance[0][0], 2) + Math.pow(distance[1][0], 2) + Math.pow(distance[2][0], 2);
-        //     return square_norm;
-        // }
-        // let optimized_state = optimization_solve(f, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], undefined, 'bfgs');
+        let optimized_state = inverse_kinematics(robot, target_position, 9);
 
-        // let out_poses = forward_kinematics(optimized_state);
+        let inter_poses = interpolate_between_states(robot, curr_state, optimized_state, settings.t);
+        //let out_poses = forward_kinematics(robot, optimized_state);
+
+        //let grab_rotation, grab_position = get_SO3_and_t_from_SE3(out_poses[19]);
+        //let distance = add_matrix_matrix(grab_position, mul_matrix_scalar(target_position, -1));
+        //let square_norm = Math.pow(distance[0][0], 2) + Math.pow(distance[1][0], 2) + Math.pow(distance[2][0], 2);
+        //let square_norm = frobenius_norm_matrix(distance);
+        //let square_norm = Math.pow(frobenius_norm_matrix(distance), 1);
+        //let square_norm = Math.abs(distance[0][0]) + Math.abs(distance[1][0]) + Math.abs(distance[2][0]);
+
+        // settings.distance_x = distance[0][0];
+        // settings.distance_y = distance[1][0];
+        // settings.distance_z = distance[2][0];
+        //settings.distance_norm = square_norm;
+        refresh_displays(gui);
 
         links.forEach(link => {
             let link_idx = link.link_idx;
             let link_name = link.link_name;
-            robot.set_link_mesh_pose_from_SE3_matrix(engine, link_idx, out_poses[link_idx]);
+            robot.set_link_mesh_pose_from_SE3_matrix(engine, link_idx, inter_poses[link_idx]);
             if (settings[link_name]){
-                display_link_frame(out_poses[link_idx]);
+                display_link_frame(inter_poses[link_idx]);
             }
             
             if (settings.display_mesh_only_with_frame){
