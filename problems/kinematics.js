@@ -70,8 +70,6 @@ export function inverse_kinematics(robot, target, n_dof){
     let f = state => {
         let out_poses = forward_kinematics(robot, state);
         let [grab_rotation, grab_position] = get_SO3_and_t_from_SE3(out_poses[19]);
-        console.log(target);
-        console.log(grab_position);
         let distance = add_matrix_matrix(grab_position, mul_matrix_scalar(target, -1));
         let square_norm = Math.pow(frobenius_norm_matrix(distance), 2);
 

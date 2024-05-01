@@ -33,6 +33,9 @@
     let joints = robot.joints;
     let links = robot.links;
 
+    let interpolating = false;
+    let init_state = [];
+
     robot.spawn_robot(engine);
 
     let settings = {
@@ -65,6 +68,7 @@
             settings.y_target = 0.5;
             settings.z_target = 0.5;
             settings.t = 0.00;
+            interpolating = false;
             refresh_displays(gui);
         },
         select_all: function() {
@@ -80,6 +84,10 @@
                 settings[link_name] = false;
                 refresh_displays(gui);
             });
+        },
+        interpolate: function() {
+            interpolating = true;
+            init_state = [settings.dof0, settings.dof1, settings.dof2, settings.dof3, settings.dof4, settings.dof5, settings.dof6, settings.dof7, settings.dof8];
         }
     }
 
@@ -115,6 +123,7 @@
     gui.add(actions, 'reset').name('Reset');
     gui.add(actions, 'select_all').name('Select All Frames');
     gui.add(actions, 'deselect_all').name('Deselect All Frames');
+    gui.add(actions, 'interpolate').name('Interpolate');
 
     links.forEach(link => {
         let link_name = link.link_name;
@@ -139,6 +148,7 @@
     let gizmo_engine = new TransformGizmoEngine(engine, 0.034);
     gizmo_engine.add_gizmo_SO3_matrix_and_position(engine, [[1,0,0],[0,1,0],[0,0,1]], [[0.5], [0.5], [0.5]], 1);
 
+    
     engine.animation_loop( ()  => {
 
         let links = robot.links;
@@ -148,7 +158,6 @@
 
         let gizmo_target = gizmo_engine.get_gizmo_pose_as_SO3_matrix_and_position(0);
         let target_position = gizmo_target[1];
-        console.log(target_position);
         //let target = [[settings.x_target], [settings.y_target], [settings.z_target]];
 
         //engine.draw_debug_sphere([settings.x_target, settings.y_target, settings.z_target], 0.1, 0x00ff00, 1.0, 10);
@@ -156,7 +165,7 @@
 
         let optimized_state = inverse_kinematics(robot, target_position, 9);
 
-        let inter_poses = interpolate_between_states(robot, curr_state, optimized_state, settings.t);
+        
         //let out_poses = forward_kinematics(robot, optimized_state);
 
         //let grab_rotation, grab_position = get_SO3_and_t_from_SE3(out_poses[19]);
@@ -170,14 +179,28 @@
         // settings.distance_y = distance[1][0];
         // settings.distance_z = distance[2][0];
         //settings.distance_norm = square_norm;
+        let poses;
+        if (interpolating) {
+            let inter_state = interpolate_between_states(robot, init_state, optimized_state, settings.t);
+            [settings.dof0, settings.dof1, settings.dof2, settings.dof3, settings.dof4, settings.dof5, settings.dof6, settings.dof7, settings.dof8] = inter_state;
+            poses = forward_kinematics(robot, inter_state);
+            
+            if (settings.t < 1.00){
+                settings.t = settings.t + 0.0167;
+            }
+            
+        }
+        else {
+            poses = forward_kinematics(robot, curr_state);
+        }
         refresh_displays(gui);
 
         links.forEach(link => {
             let link_idx = link.link_idx;
             let link_name = link.link_name;
-            robot.set_link_mesh_pose_from_SE3_matrix(engine, link_idx, inter_poses[link_idx]);
+            robot.set_link_mesh_pose_from_SE3_matrix(engine, link_idx, poses[link_idx]);
             if (settings[link_name]){
-                display_link_frame(inter_poses[link_idx]);
+                display_link_frame(poses[link_idx]);
             }
             
             if (settings.display_mesh_only_with_frame){
