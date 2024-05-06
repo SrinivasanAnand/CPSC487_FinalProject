@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>CPSC 487/587</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.3.0/math.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quaternion@1.5.1/quaternion.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric-1.2.6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import * as THREE from 'three';
+    import {get_default_lil_gui, ThreeEngine, refresh_displays} from "../js/utils/utils_three.js";
+    import {XArm7Robot} from "../js/utils/utils_robot.js";
+    import {mul_matrix_matrix, mul_matrix_scalar, add_matrix_matrix, identity_matrix, transpose, frobenius_norm_matrix} from "../js/utils/utils_math.js";
+    import { TransformGizmoEngine } from "../js/utils/utils_transform_gizmo.js";
+    import { forward_kinematics, inverse_kinematics } from "./kinematics.js";
+    import { interpolate_between_states } from "./interpolation.js";
+    import { baseball, projectile, calculate_collision, calculate_collision_steps, calculate_launch_speed, setup_scene} from "./baseball.js";
+    import { get_SO3_and_t_from_SE3 } from "./se3_log_and_exponential.js";
+
+    let engine = ThreeEngine.new_default_3d(5, 1.0, 0.75, false, true);
+
+    // variables / settings
+    let init_ball_position = [[4], [0], [0.7]];
+    let grasp_dof = 0.18;
+    let catch_interpolation_speed = 2.0;
+    let rewind_interpolation_speed = 0.5;
+    let throw_interpolation_speed = 5.5;
+    let release_interpolation_speed = 5.5;
+    let return_interpolation_speed = 0.5;
+    let ball_steps = 0;
+    let catch_plane = 0.5;
+    let launch_speed = 0.0;
+    let launch_acc = 0.0;
+    let strike_coord;
+
+    let state_machine = {
+        ready: true,
+        catching: false,
+        rewinding: false,
+        throwing_back: false,
+        releasing: false,
+        return_to_start: false,
+        idle: false
+    };
+
+    let settings = {
+        t: 0.00,
+        x_vel: 0.10,
+        y_vel: 0.001,
+        z_vel: 0.001,
+        y_acc: -0.0000,
+        z_acc: -0.0002,
+    };
+
+    let actions = {
+        throw: function() {
+            if (state_machine.ready){
+                let vel = [[-settings.x_vel], [settings.y_vel], [settings.z_vel]];
+                let acc = [[0.00], [settings.y_acc], [settings.z_acc]];
+                proj.set_velocity(vel);
+                proj.set_acceleration(acc);
+                proj.set_spin_theta(0.5);
+
+                ball_steps = calculate_collision_steps(init_ball_position, vel, catch_plane);
+                catch_interpolation_speed = 60 / ball_steps;
+
+                let collision_coord = calculate_collision(init_ball_position, vel, acc, catch_plane);
+
+                strike_coord =  calculate_collision(init_ball_position, vel, acc, 1);
+                //engine.draw_debug_sphere([strike_coord[0][0], strike_coord[1][0], strike_coord[2][0]], 0.03, 0xffee00, 1.0, 10);
+
+                catch_state = inverse_kinematics(robot, collision_coord, 9);
+                catch_state[8] = grasp_dof;
+
+                state_machine.ready = false;
+                state_machine.catching = true;
+            }
+        },
+
+    }
+
+    let gui = get_default_lil_gui();
+    
+    gui.add(actions, 'throw').name("Throw");
+    gui.add(settings, 'x_vel', 0.0, 0.2).name("X velcoity");
+    gui.add(settings, 'y_vel', -0.01, 0.01).name("Y velcoity");
+    gui.add(settings, 'z_vel', 0.0, 0.01).name("Z velcoity");
+    gui.add(settings, 'y_acc', -0.001, 0.001).name("Y acceleration");
+    gui.add(settings, 'z_acc', -0.001, 0.000).name("Z acceleration");
+
+    setup_scene(engine);
+
+    let robot = new XArm7Robot();
+    let joints = robot.joints;
+    let links = robot.links;
+    robot.spawn_robot(engine);
+
+    let init_state = [0.34, 0.00, -1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    let throw_state = [0.34, 0.00, -1.5, 0.0, 2.5, 0.0, 0.0, 0.0, grasp_dof];
+    let inter_throw_state = [0.34, 0.00, -1.5, 0.0, 1.5, 0.0, 0.0, 0.0, 0.12];
+    let release_state = [0.34, 0.00, -1.5, 0.0, 1.35, 0.0, 0.0, 0.0, 0.09];
+    let catch_state;
+
+    let init_poses = forward_kinematics(robot, init_state);
+    let idle_poses = forward_kinematics(robot, release_state);
+
+    let proj = new projectile(engine, init_ball_position, 0.03);
+
+    engine.animation_loop( ()  => {
+
+        proj.time_step();
+
+        let poses;
+        if (state_machine.catching) {
+            let inter_state = interpolate_between_states(robot, init_state, catch_state, settings.t * catch_interpolation_speed);
+            poses = forward_kinematics(robot, inter_state);
+            
+            if (settings.t < 1.00 / catch_interpolation_speed){
+                settings.t = settings.t + 0.0167;
+            }
+            else {
+                state_machine.catching = false;
+                state_machine.rewinding = true;
+                settings.t = 0;
+            }          
+        }
+        else if (state_machine.rewinding) {
+            engine.draw_debug_sphere([strike_coord[0][0], strike_coord[1][0], strike_coord[2][0]], 0.03, 0xff0000, 1.0, 10);
+
+            let inter_state_2 = interpolate_between_states(robot, catch_state, throw_state, settings.t * rewind_interpolation_speed);
+            poses = forward_kinematics(robot, inter_state_2);
+
+            let [link19_rotation, link19_position] = get_SO3_and_t_from_SE3(poses[19]);
+            proj.set_pos(link19_position);
+
+            if (settings.t < 1.00 / rewind_interpolation_speed){
+                settings.t = settings.t + 0.0167;
+            }
+            else {
+                state_machine.rewinding = false;
+                state_machine.throwing_back = true;
+                settings.t = 0;
+            }   
+        }
+        else if (state_machine.throwing_back){
+            engine.draw_debug_sphere([strike_coord[0][0], strike_coord[1][0], strike_coord[2][0]], 0.03, 0xff0000, 1.0, 10);
+
+            let inter_state_3 = interpolate_between_states(robot, throw_state, inter_throw_state, settings.t * throw_interpolation_speed);
+            poses = forward_kinematics(robot, inter_state_3);
+
+            let [link19_rotation, link19_position] = get_SO3_and_t_from_SE3(poses[19]);
+            proj.set_pos(link19_position);
+
+            if (settings.t < 1.00 / throw_interpolation_speed){
+                settings.t = settings.t + 0.0167;
+            }
+            else {
+                state_machine.throwing_back= false;
+                state_machine.releasing = true;
+                settings.t = 0;
+
+                let launch_dir = mul_matrix_matrix(link19_rotation, [[-1], [0], [0]]);
+                console.log(launch_dir);
+
+                launch_speed = calculate_launch_speed(proj.get_pos(), settings.z_acc, init_ball_position);
+                launch_acc = [[0.00], [0.00], [settings.z_acc]];
+
+                proj.set_velocity(launch_speed);
+                proj.set_acceleration(launch_acc);
+                proj.set_spin_theta(0.5);
+            } 
+        }
+        else if (state_machine.releasing){
+            engine.draw_debug_sphere([strike_coord[0][0], strike_coord[1][0], strike_coord[2][0]], 0.03, 0xff0000, 1.0, 10);
+
+            let inter_state_4 = interpolate_between_states(robot, inter_throw_state, release_state, settings.t * release_interpolation_speed);
+            poses = forward_kinematics(robot, inter_state_4);
+
+            if (settings.t < 1.00 / release_interpolation_speed){
+                settings.t = settings.t + 0.0167;
+            }
+            else {
+                state_machine.releasing = false;
+                state_machine.return_to_start = true;
+                settings.t = 0;
+            } 
+        }
+        else if (state_machine.return_to_start) {
+            engine.draw_debug_sphere([strike_coord[0][0], strike_coord[1][0], strike_coord[2][0]], 0.03, 0xff0000, 1.0, 10);
+            
+            let inter_state_5 = interpolate_between_states(robot, release_state, init_state, settings.t * return_interpolation_speed);
+            poses = forward_kinematics(robot, inter_state_5);
+
+            if (settings.t < 1.00 / return_interpolation_speed){
+                settings.t = settings.t + 0.0167;
+            }
+            else {
+                state_machine.return_to_start = false;
+                state_machine.ready = true;
+                settings.t = 0;
+            } 
+        }
+        else if (state_machine.idle) {
+            poses = idle_poses;
+        }
+        else {
+            poses = init_poses;
+        }
+
+
+        links.forEach(link => {
+            let link_idx = link.link_idx;
+            let link_name = link.link_name;
+            robot.set_link_mesh_pose_from_SE3_matrix(engine, link_idx, poses[link_idx]);
+        });
+
+    });
+
+</script>
+</body>
+</html>
+

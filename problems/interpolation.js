@@ -35,7 +35,6 @@ export function interpolate(SE3_1, SE3_2, t){
 export function interpolate_between_states(robot, state_1, state_2, t){
     //let state_1_poses = forward_kinematics(robot, state_1);
     //let state_2_poses = forward_kinematics(robot, state_2);
-    console.log(t);
     let inter_states = []
     for (let i = 0; i < state_1.length; i++){
         inter_states.push((state_2[i] - state_1[i]) * t + state_1[i]);

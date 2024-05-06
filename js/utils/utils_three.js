@@ -46,7 +46,7 @@ export class ThreeEngine {
         threejs_responsive_canvas(this.camera, this.renderer);
     }
 
-    static #new_default_generic(orthographic_camera=false) {
+    static #new_default_generic(orthographic_camera=false, customized=false) {
         const scene = new THREE.Scene();
         let camera;
         if(orthographic_camera) {
@@ -107,25 +107,53 @@ export class ThreeEngine {
         // pointLight2.shadow.mapSize.height = 2048;
         // scene.add(pointLight3);
 
-        scene.background = new THREE.Color(0xF3F3FE);
 
-        // const floorGeometry = new THREE.PlaneGeometry(20, 20); // 10x10 size
-        // const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x808080 });
-        // const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-        // floor.rotation.x = -Math.PI / 2;
-        // floor.receiveShadow = true; // Enable receiving shadows
-        // floor.position.y = -2; // Lower it by 1 unit
+        if (customized){
+            scene.background = new THREE.Color(0xbfe3dd);
 
-        // scene.add(floor);
+            // const floorGeometry = new THREE.PlaneGeometry(50, 50); // 10x10 size
+            // const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x136d15 });
+            // const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            // floor.rotation.x = -Math.PI / 2;
+            // floor.receiveShadow = true; // Enable receiving shadows
+            // floor.position.y = 0; // Lower it by 1 unit
+    
+            // scene.add(floor);
 
-        var size = 20;  // The size of the grid
-        var divisions = 20; // The number of divisions (grid lines)
+            let floorMat = new THREE.MeshStandardMaterial( {
+                roughness: 0.8,
+                color: 0xffffff,
+                metalness: 0.2,
+                bumpScale: 1
+            } );
 
-        var gridHelper = new THREE.GridHelper(size, divisions);
-        scene.add(gridHelper);
+            const textureLoader = new THREE.TextureLoader();
+            textureLoader.load( '../textures/hardwood2_diffuse.jpg', function ( map ) {
 
-        spawn_line_base(scene, convert_z_up_array_to_y_up_array([0.,0.,0.]), convert_z_up_array_to_y_up_array([10.,0.,0.]), false, 0.02, 0xff0000);
-        spawn_line_base(scene, convert_z_up_array_to_y_up_array([0.,0.,0.]), convert_z_up_array_to_y_up_array([0.,10.,0.]), false, 0.02, 0x00ff00);
+                map.wrapS = THREE.RepeatWrapping;
+                map.wrapT = THREE.RepeatWrapping;
+                map.anisotropy = 4;
+                map.repeat.set( 10, 24 );
+                map.colorSpace = THREE.SRGBColorSpace;
+                floorMat.map = map;
+                floorMat.needsUpdate = true;
+
+            } );
+        }
+        else {
+            scene.background = new THREE.Color(0xF3F3FE);
+            var size = 20;  // The size of the grid
+            var divisions = 20; // The number of divisions (grid lines)
+
+            var gridHelper = new THREE.GridHelper(size, divisions);
+            scene.add(gridHelper);
+
+            spawn_line_base(scene, convert_z_up_array_to_y_up_array([0.,0.,0.]), convert_z_up_array_to_y_up_array([10.,0.,0.]), false, 0.02, 0xff0000);
+            spawn_line_base(scene, convert_z_up_array_to_y_up_array([0.,0.,0.]), convert_z_up_array_to_y_up_array([0.,10.,0.]), false, 0.02, 0x00ff00);
+        }
+
+
+
 
         var stats = new Stats();
         document.body.appendChild(stats.dom);
@@ -149,8 +177,8 @@ export class ThreeEngine {
         return engine;
     }
 
-    static new_default_3d(camera_x=3, camera_y=2, camera_z=1, orthographic_camera=false) {
-        let engine = ThreeEngine.#new_default_generic(orthographic_camera);
+    static new_default_3d(camera_x=3, camera_y=2, camera_z=1, orthographic_camera=false, customized=false) {
+        let engine = ThreeEngine.#new_default_generic(orthographic_camera, customized);
         z_up_set_object_position(engine.camera, camera_x, camera_y, camera_z);
         engine.camera.lookAt(0,0,0);
         engine.is2D = false;
@@ -292,8 +320,8 @@ export class ThreeEngine {
     }
 
     add_torus_as_mesh_object() {
-        const geometry = new THREE.TorusGeometry(1, 0.4, 16, 100);
-        const material = new THREE.MeshBasicMaterial( { color: 0xffff00 } );
+        const geometry = new THREE.TorusGeometry(0.025, 0.006, 50, 100);
+        const material = new THREE.MeshBasicMaterial( { color: 0xc33b3b} );
         const torusKnot = new THREE.Mesh( geometry, material );
         this.scene.add( torusKnot );
 
@@ -310,6 +338,115 @@ export class ThreeEngine {
         let idx = this.mesh_objects.length;
         this.mesh_objects.push(torusKnot);
         return idx;
+    }
+
+    add_torus_specific_as_mesh_object(radius, tube, radial_segments, tubular_segments, arc) {
+        const geometry = new THREE.TorusGeometry(radius, tube, radial_segments, tubular_segments, arc);
+        const material = new THREE.MeshBasicMaterial( { color: 0xc33b3b } );
+        const torusKnot = new THREE.Mesh( geometry, material );
+        this.scene.add( torusKnot );
+
+        let wireframeMaterial = new THREE.LineBasicMaterial({color: 0x333333});
+        let wireframeGeometry = new THREE.WireframeGeometry(torusKnot.geometry);
+        let wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        wireframe.visible = false;
+        wireframe.setRotationFromQuaternion(torusKnot.quaternion);
+
+        torusKnot.add(wireframe);
+        this.mesh_object_wireframes.push(wireframe);
+        this.scene.add(wireframe);
+
+        let idx = this.mesh_objects.length;
+        this.mesh_objects.push(torusKnot);
+        return idx;
+    }
+
+    add_sphere_as_mesh_object(center_point, radius, num_segments=10, color=0x00ff00, opacity=1.0, flat_material=true) {
+        let geometry = new THREE.SphereGeometry(radius, num_segments, num_segments);
+        let material;
+        if(flat_material) {
+            material = new THREE.MeshBasicMaterial({ color: color });
+        } else {
+            material = new THREE.MeshStandardMaterial({ color: color });
+        }
+        let sphere = new THREE.Mesh(geometry, material);
+        sphere.position.x = center_point[0];
+        sphere.position.y = center_point[1];
+        sphere.position.z = center_point[2];
+
+        sphere.material.opacity = opacity;
+
+        this.scene.add(sphere);
+
+        let wireframeMaterial = new THREE.LineBasicMaterial({color: 0x333333});
+        let wireframeGeometry = new THREE.WireframeGeometry(sphere.geometry);
+        let wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        wireframe.visible = false;
+        wireframe.setRotationFromQuaternion(sphere.quaternion);
+
+        // sphere.material.transparent = true;
+        
+        // if (render_through_other_objects) { sphere.material.depthTest = false; }
+
+        sphere.add(wireframe);
+        this.mesh_object_wireframes.push(wireframe);
+        this.scene.add(wireframe);
+
+        let idx = this.mesh_objects.length;
+        this.mesh_objects.push(sphere);
+        return idx;
+    
+    
+        // let wireframeMaterial = new THREE.LineBasicMaterial({color: 0x333333});
+        // let wireframeGeometry = new THREE.WireframeGeometry(torusKnot.geometry);
+        // let wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        // wireframe.visible = false;
+        // wireframe.setRotationFromQuaternion(torusKnot.quaternion);
+    
+    }
+
+    add_baseball_as_mesh_object(center_point, radius, num_segments=10, color=0x00ff00, opacity=1.0, flat_material=true) {
+        let geometry = new THREE.SphereGeometry(radius, num_segments, num_segments);
+        let material;
+        if(flat_material) {
+            material = new THREE.MeshBasicMaterial({ color: color });
+        } else {
+            material = new THREE.MeshStandardMaterial({ color: color });
+        }
+        let sphere = new THREE.Mesh(geometry, material);
+        sphere.position.x = center_point[0];
+        sphere.position.y = center_point[1];
+        sphere.position.z = center_point[2];
+
+        sphere.material.opacity = opacity;
+
+        this.scene.add(sphere);
+
+        let wireframeMaterial = new THREE.LineBasicMaterial({color: 0x333333});
+        let wireframeGeometry = new THREE.WireframeGeometry(sphere.geometry);
+        let wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        wireframe.visible = false;
+        wireframe.setRotationFromQuaternion(sphere.quaternion);
+
+        // sphere.material.transparent = true;
+        
+        // if (render_through_other_objects) { sphere.material.depthTest = false; }
+
+        sphere.add(wireframe);
+        this.mesh_object_wireframes.push(wireframe);
+        this.scene.add(wireframe);
+
+        let idx = this.mesh_objects.length;
+        this.mesh_objects.push(sphere);
+        return idx;
+    
+    
+        // let wireframeMaterial = new THREE.LineBasicMaterial({color: 0x333333});
+        // let wireframeGeometry = new THREE.WireframeGeometry(torusKnot.geometry);
+        // let wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        // wireframe.visible = false;
+        // wireframe.setRotationFromQuaternion(torusKnot.quaternion);
+    
     }
 
     add_gizmo_controller(position, wxyz_quaternion) {
@@ -973,6 +1110,8 @@ export function spawn_sphere_base(scene, center_point, radius, num_segments=10, 
 
     return sphere;
 }
+
+
 
 export function spawn_sphere_default(scene, num_segments=10, color=0x00ff00, opacity=1.0, flat_material=true) {
     return spawn_sphere_base(scene, [0,0,0], 1, num_segments, color, opacity, flat_material);

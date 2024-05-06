@@ -330,7 +330,7 @@ export class XArm7Robot extends RobotBaseClass {
         let joint16 = new RobotJointFixed('right_finger_joint', 16, 16, 17, [0.0, -0.035465, 0.042039], [0,0,0]);
         //let joint17 = new RobotJointFixed('right_inner_knuckle_joint', 17, 12, 18, [0.0, -0.02, 0.074098], [0,0,0]);
         let joint17 = new RobotJointRevolute('right_inner_knuckle_joint', 17, 12, 18, 8, [[-1], [0], [0]], 0.0, 0.44, [0.0, -0.02, 0.074098], [0,0,0]);
-        let joint18 = new RobotJointFixed('joint_tcp', 18, 12, 19,  [0.0, 0.0, 0.172], [0,0,0]);
+        let joint18 = new RobotJointFixed('joint_tcp', 18, 12, 19,  [0.0, 0.0, 0.142], [0,0,0]); //0.172
 
         return [joint0, joint1, joint2, joint3, joint4, joint5, joint6, joint7, joint8, joint9, joint10, joint11, joint12, joint13, joint14, joint15, joint16, joint17, joint18];
     }

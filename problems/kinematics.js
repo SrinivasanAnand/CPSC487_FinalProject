@@ -70,6 +70,7 @@ export function inverse_kinematics(robot, target, n_dof){
     let f = state => {
         let out_poses = forward_kinematics(robot, state);
         let [grab_rotation, grab_position] = get_SO3_and_t_from_SE3(out_poses[19]);
+        //grab_position[0][0] = grab_position[0][0] + 0.2;
         let distance = add_matrix_matrix(grab_position, mul_matrix_scalar(target, -1));
         let square_norm = Math.pow(frobenius_norm_matrix(distance), 2);
 
@@ -77,9 +78,10 @@ export function inverse_kinematics(robot, target, n_dof){
     }
 
     let init_state = [];
-    for (let i = 0; i < n_dof; i++){
+    for (let i = 0; i < n_dof ; i++){
         init_state.push(0.0);
     }
+    init_state[2] = -1.571;
     let optimized_state = optimization_solve(f, init_state, undefined, 'bfgs');
 
     return optimized_state;

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>CPSC 487/587</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.3.0/math.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quaternion@1.5.1/quaternion.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric-1.2.6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import * as THREE from 'three';
+    import {get_default_lil_gui, ThreeEngine, refresh_displays} from "../js/utils/utils_three.js";
+    import {XArm7Robot} from "../js/utils/utils_robot.js";
+    import {mul_matrix_matrix, mul_matrix_scalar, add_matrix_matrix, identity_matrix, transpose, frobenius_norm_matrix} from "../js/utils/utils_math.js";
+    import { TransformGizmoEngine } from "../js/utils/utils_transform_gizmo.js";
+    import { forward_kinematics, inverse_kinematics } from "./kinematics.js";
+    import { interpolate_between_states } from "./interpolation.js";
+    import { baseball, projectile, calculate_collision} from "./baseball.js";
+
+    let engine = ThreeEngine.new_default_3d(5.3, 0.0, 1.25);
+
+    let settings = {
+        x_vel: 0.10,
+        y_vel: 0.001,
+        z_vel: 0.001,
+        y_acc: -0.0000,
+        z_acc: -0.0004,
+    };
+
+    let actions = {
+        throw: function() {
+            let vel = [[-settings.x_vel], [settings.y_vel], [settings.z_vel]];
+            let acc = [[0.00], [settings.y_acc], [settings.z_acc]];
+            proj.set_velocity(vel);
+            proj.set_acceleration(acc);
+            proj.set_spin_theta(0.5);
+            let collision_coord = calculate_collision([[4.5], [0], [1.25]], vel, acc, 0.5);
+            console.log(collision_coord);
+            engine.draw_debug_sphere([collision_coord[0][0], collision_coord[1][0], collision_coord[2][0]], 0.03, 0xffee00, 1.0, 10);
+        },
+
+    }
+
+    let gui = get_default_lil_gui();
+    
+    gui.add(actions, 'throw').name("Throw");
+    gui.add(settings, 'x_vel', 0.0, 0.2).name("X velcoity");
+    gui.add(settings, 'y_vel', -0.01, 0.01).name("Y velcoity");
+    gui.add(settings, 'z_vel', 0.0, 0.01).name("Z velcoity");
+    gui.add(settings, 'y_acc', -0.001, 0.001).name("Y acceleration");
+    gui.add(settings, 'z_acc', -0.001, 0.000).name("Z acceleration");
+
+    engine.draw_debug_plane([1.0, 0.0, 1.0], [[0], [0], [1]], [[0], [1], [0]], 0.25, 0.25, 0x00ff00, 0.3);
+
+    engine.draw_debug_plane([0.5, 0.0, 1.0], [[0], [0], [1]], [[0], [1], [0]], 0.5, 0.5, 0x00ffff, 0.3);
+    // 0.025, 0.006, 50, 100
+
+    let proj = new projectile(engine, [[4.5], [0], [1.25]], 0.03);
+
+    engine.animation_loop( ()  => {
+
+        proj.time_step();
+
+    });
+
+</script>
+</body>
+</html>
