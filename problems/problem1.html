@@ -55,9 +55,9 @@
 
     let actions = {
         reset: function() {
-            settings.dof0 = 0;
+            settings.dof0 = 0.34;
             settings.dof1 = 0;
-            settings.dof2 = 0;
+            settings.dof2 = -1.5;
             settings.dof3 = 0;
             settings.dof4 = 0;
             settings.dof5 = 0;
@@ -92,15 +92,8 @@
     }
 
     let gui = get_default_lil_gui();
-    
-    gui.add(settings, 'display_mesh').name("Display Mesh");
-    gui.add(settings, 'display_wireframe').name("Display Wireframe");
-    gui.add(settings, 'display_mesh_only_with_frame').name("Display Mesh Only With Frame");
-    gui.add(settings, 'distance_x').name("DistanceX");
-    gui.add(settings, 'distance_y').name("DistanceY");
-    gui.add(settings, 'distance_z').name("DistanceZ");
-    gui.add(settings, 'distance_norm').name("Distance Norm");
-    gui.add(settings, 't', 0.00, 1.00).name('t');
+
+    gui.add(settings, 't', 0.00, 1.00).disable();
 
     let processed_degrees = [];
     for (let i = 0; i < 9; i++){
@@ -117,19 +110,16 @@
         });
     }
 
-    gui.add(settings, 'x_target', -1.0, 1.0).name('X Target');
-    gui.add(settings, 'y_target', -1.0, 1.0).name('Y Target');
-    gui.add(settings, 'z_target', -1.0, 1.0).name('Z Target');
+    actions.reset();
+
     gui.add(actions, 'reset').name('Reset');
-    gui.add(actions, 'select_all').name('Select All Frames');
-    gui.add(actions, 'deselect_all').name('Deselect All Frames');
     gui.add(actions, 'interpolate').name('Interpolate');
 
-    links.forEach(link => {
-        let link_name = link.link_name;
-        settings[link_name] = false;
-        gui.add(settings, link_name).name(link_name);
-    });
+    // links.forEach(link => {
+    //     let link_name = link.link_name;
+    //     settings[link_name] = false;
+    //     gui.add(settings, link_name).name(link_name);
+    // });
 
     function display_link_frame(link_pose){
         let center = [link_pose[0][3], link_pose[1][3], link_pose[2][3]];
