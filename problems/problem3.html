@@ -63,7 +63,13 @@
         z_vel: 0.001,
         y_acc: -0.0000,
         z_acc: -0.0002,
+        curve: 0.00,
     };
+
+    function configure_settings() {
+        settings.y_acc = settings.curve * 0.0003;
+        refresh_displays(gui);
+    }
 
     let actions = {
         throw: function() {
@@ -95,11 +101,11 @@
     let gui = get_default_lil_gui();
     
     gui.add(actions, 'throw').name("Throw");
-    gui.add(settings, 'x_vel', 0.0, 0.2).name("X velcoity");
-    gui.add(settings, 'y_vel', -0.01, 0.01).name("Y velcoity");
-    gui.add(settings, 'z_vel', 0.0, 0.01).name("Z velcoity");
-    gui.add(settings, 'y_acc', -0.001, 0.001).name("Y acceleration");
-    gui.add(settings, 'z_acc', -0.001, 0.000).name("Z acceleration");
+    gui.add(settings, 'x_vel', 0.05, 0.2).name("Forwards velcoity");
+    gui.add(settings, 'y_vel', -0.003, 0.003).name("Horizontal velcoity");
+    gui.add(settings, 'z_vel', 0.0, 0.01).name("Upwards velcoity");
+    //gui.add(settings, 'y_acc', -0.0003, 0.0003).name("Y acceleration");
+    gui.add(settings, 'curve', -1.0, 1.0).name("Left/Right Curve");
 
     setup_scene(engine);
 
@@ -120,6 +126,8 @@
     let proj = new projectile(engine, init_ball_position, 0.03);
 
     engine.animation_loop( ()  => {
+
+        configure_settings();
 
         proj.time_step();
 
@@ -200,7 +208,7 @@
         }
         else if (state_machine.return_to_start) {
             engine.draw_debug_sphere([strike_coord[0][0], strike_coord[1][0], strike_coord[2][0]], 0.03, 0xff0000, 1.0, 10);
-            
+
             let inter_state_5 = interpolate_between_states(robot, release_state, init_state, settings.t * return_interpolation_speed);
             poses = forward_kinematics(robot, inter_state_5);
 
